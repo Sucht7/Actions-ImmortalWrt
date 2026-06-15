@@ -59,10 +59,7 @@ jobs:
 
       - name: 更新 & 安装 feeds
         working-directory: ImmortalWrt
-        run: |
-          ./scripts/feeds clean
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a || true
+        run: ./scripts/feeds update -a && ./scripts/feeds install -a
 
       - name: 再次复制配置文件
         run: cp -f .config feeds.conf.default diy.sh ImmortalWrt/
