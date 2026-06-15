@@ -4,4 +4,5 @@ src-git luci https://github.com/immortalwrt/luci.git;openwrt-23.05
 src-git routing https://github.com/immortalwrt/routing.git;openwrt-23.05
 src-git telephony https://github.com/immortalwrt/telephony.git;openwrt-23.05
 src-git kenzo https://github.com/kenzok8/openwrt-packages
-src-git small8 https://github.com/kenzok8/small-package
+# 注释掉冲突的 small8 源，彻底解决 webd 报错
+# src-git small8 https://github.com/kenzok8/small-package
