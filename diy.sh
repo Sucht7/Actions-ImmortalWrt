@@ -13,5 +13,6 @@ sed -i 's/set dhcp.lan.ignore=0/set dhcp.lan.ignore=1/' package/base-files/files
 mkdir -p etc/config
 echo "wireless country AU" >> etc/config/wireless
 
-# 【关键修复】删除冲突的 webd 目录，解决 feeds 报错
+# 【前置清理】提前删除冲突 webd，同时清理feeds缓存
 rm -rf feeds/small8/webd
+rm -rf feeds/*/tmp
