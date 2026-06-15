@@ -1,11 +1,4 @@
-#!/bin/bash
-# 旁路由IP 10.0.0.2
-sed -i 's/192.168.1.1/10.0.0.2/g' package/base-files/files/bin/config_generate
-# 网关 10.0.0.1
-sed -i '/set network.lan.gateway/d' package/base-files/files/bin/config_generate
-echo "set network.lan.gateway='10.0.0.1'" >> package/base-files/files/bin/config_generate
-# 关闭DHCP
-sed -i 's/set dhcp.lan.ignore=0/set dhcp.lan.ignore=1/' package/base-files/files/bin/config_generate
-# 无线国家 AU
-mkdir -p etc/config
-echo "wireless country AU" >> etc/config/wireless
+# 请在下方输入自定义命令(一般用来安装第三方插件)(可以留空)
+# Please enter the custom command below (usually used to install third-party plugins) (can be left blank)
+# git clone --depth=1 https://github.com/EOYOHOO/UA2F.git package/UA2F
+# git clone --depth=1 https://github.com/EOYOHOO/rkp-ipid.git package/rkp-ipid
