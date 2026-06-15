@@ -58,7 +58,7 @@ jobs:
 
       # 4. 拷贝核心配置（仅一次）
       - name: 拷贝配置与脚本
-        run: cp -f .config diy ImmortalWrt/
+        run: cp -f .config diy.sh ImmortalWrt/
 
       # 5. 进入源码，执行自定义脚本
       - name: 执行 diy.sh
