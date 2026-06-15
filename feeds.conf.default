@@ -1,9 +1,8 @@
 src-git base https://github.com/immortalwrt/openwrt.git;openwrt-23.05
 src-git packages https://github.com/immortalwrt/packages.git;openwrt-23.05
 src-git luci https://github.com/immortalwrt/luci.git;openwrt-23.05
-# 移除 routing / telephony（目录缺失、持续报错，家用旁路由无需）
+# 禁用 routing / telephony / small8 冲突源
 # src-git routing https://github.com/immortalwrt/routing.git;openwrt-23.05
 # src-git telephony https://github.com/immortalwrt/telephony.git;openwrt-23.05
 src-git kenzo https://github.com/kenzok8/openwrt-packages
-# 彻底关闭冲突 small8 源
 # src-git small8 https://github.com/kenzok8/small-package
