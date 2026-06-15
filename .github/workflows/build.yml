@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-22.04
     name: 🚀 编译 (Build)
     steps:
-      - name: 下载编译所需的依赖
+      - name: 安装编译依赖
         run: |
           sudo apt update
           sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
@@ -40,7 +40,7 @@ jobs:
       - name: 克隆当前仓库
         uses: actions/checkout@v4
 
-      - name: 克隆 ImmortalWrt 官方源码
+      - name: 拉取 ImmortalWrt 源码
         uses: actions/checkout@v4
         with:
           repository: ${{inputs.owner}}/${{inputs.repo}}
@@ -48,33 +48,30 @@ jobs:
           path: ImmortalWrt
           fetch-depth: 1
 
-      - name: 复制配置文件
+      - name: 拷贝配置文件（仅执行一次）
         run: cp -f .config feeds.conf.default diy.sh ImmortalWrt/
 
-      - name: 运行 diy.sh
+      - name: 执行自定义脚本 diy.sh
         working-directory: ImmortalWrt
         run: |
           chmod +x diy.sh
           ./diy.sh
 
-      - name: 更新 & 安装 feeds
+      - name: 清理并更新 feeds（修复文件缺失）
         working-directory: ImmortalWrt
         run: |
           ./scripts/feeds clean
           rm -rf feeds/*.index
           ./scripts/feeds update -a
-          ./scripts/feeds install -a || true
+          ./scripts/feeds install -a
 
-      - name: 再次复制配置文件
-        run: cp -f .config feeds.conf.default diy.sh ImmortalWrt/
-
-      - name: 编译前上传配置
+      - name: 上传编译前配置备份
         uses: actions/upload-artifact@v4
         with:
           name: config-before-build
           path: |
-            ImmortalWrt/feeds.conf.default
-            ImmortalWrt/.config
+            Immortal/feeds.conf.default
+            Immortal/.config
 
       - name: 多线程编译
         if: ${{inputs.multithreading == true}}
@@ -86,7 +83,7 @@ jobs:
         working-directory: ImmortalWrt
         run: make -j1 V=s
 
-      - name: 上传编译产物
+      - name: 上传编译固件
         uses: actions/upload-artifact@v4
         with:
           name: ImmortalWrt-build-result
@@ -97,7 +94,7 @@ jobs:
     name: 🚀 编译 (Build) - SSH
     runs-on: ubuntu-22.04
     steps:
-      - name: 下载编译所需的依赖
+      - name: 安装编译依赖
         run: |
           sudo apt update
           sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
@@ -105,7 +102,7 @@ jobs:
       - name: 克隆当前仓库
         uses: actions/checkout@v4
 
-      - name: 克隆 ImmortalWrt 官方源码
+      - name: 拉取 ImmortalWrt 源码
         uses: actions/checkout@v4
         with:
           repository: ${{inputs.owner}}/${{inputs.repo}}
@@ -113,30 +110,47 @@ jobs:
           path: ImmortalWrt
           fetch-depth: 1
 
-      - name: 开启 SSH 服务
+      - name: 拷贝配置文件（仅执行一次）
+        run: cp -f .config feeds.conf.default diy.sh ImmortalWrt/
+
+      - name: 执行自定义脚本 diy.sh
+        working-directory: ImmortalWrt
+        run: |
+          chmod +x diy.sh
+          ./diy.sh
+
+      - name: 清理并更新 feeds
+        working-directory: ImmortalWrt
+        run: |
+          ./scripts/feeds clean
+          rm -rf feeds/*.index
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: 开启 SSH 调试
         uses: lhotari/action-upterm@v1
         with:
           wait-timeout-minutes: 20
 
-      - name: 编译前上传配置
+      - name: 上传编译前配置备份
         uses: actions/upload-artifact@v4
         with:
           name: config-before-build
           path: |
-            ImmortalWrt/feeds.conf.default
-            ImmortalWrt/.config
+            Immortal/feeds.conf.default
+            Immortal/.config
 
       - name: 多线程编译
         if: ${{inputs.multithreading == true}}
         working-directory: ImmortalWrt
-        run: make -j$(nproc)
+        run: make -j$(nproc) V=s
 
       - name: 单线程编译
         if: ${{inputs.multithreading == false}}
         working-directory: ImmortalWrt
-        run: make -j1
+        run: make -j1 V=s
 
-      - name: 上传编译产物
+      - name: 上传编译固件
         uses: actions/upload-artifact@v4
         with:
           name: ImmortalWrt-build-result
