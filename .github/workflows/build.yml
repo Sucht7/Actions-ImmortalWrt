@@ -31,7 +31,7 @@ jobs:
     if: ${{ !inputs.ssh }}
     runs-on: ubuntu-22.04
     steps:
-      # 1. 安装完整编译依赖
+      # 安装编译依赖
       - name: 安装编译依赖
         run: |
           sudo apt update && sudo apt full-upgrade -y
@@ -43,11 +43,11 @@ jobs:
           p7zip-full patch pkgconf python2.7 python3 python3-pyelftools python3-setuptools qemu-utils \
           rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
 
-      # 2. 拉取当前仓库（.config / diy.sh）
+      # 拉取本地配置文件
       - name: 拉取本地仓库
         uses: actions/checkout@v4
 
-      # 3. 拉取 ImmortalWrt 官方源码
+      # 拉取 ImmortalWrt 源码
       - name: 拉取 ImmortalWrt 源码
         uses: actions/checkout@v4
         with:
@@ -56,18 +56,18 @@ jobs:
           path: ImmortalWrt
           fetch-depth: 1
 
-      # 4. 拷贝核心配置（仅一次）
+      # 拷贝 .config + diy.sh
       - name: 拷贝配置与脚本
         run: cp -f .config diy.sh ImmortalWrt/
 
-      # 5. 进入源码，执行自定义脚本
+      # ========= 先执行 diy.sh（必须在feeds之前）=========
       - name: 执行 diy.sh
         working-directory: ImmortalWrt
         run: |
           chmod +x diy.sh
           ./diy.sh
 
-      # 6. 更新 & 安装 feeds（标准流程）
+      # 再更新+安装 feeds
       - name: 更新安装 feeds
         working-directory: ImmortalWrt
         run: |
@@ -75,18 +75,19 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # 7. 编译
+      # 多线程编译
       - name: 多线程编译
         if: ${{ inputs.multithreading }}
         working-directory: ImmortalWrt
         run: make -j$(nproc) V=s
 
+      # 单线程编译
       - name: 单线程编译
         if: ${{ !inputs.multithreading }}
         working-directory: ImmortalWrt
         run: make -j1 V=s
 
-      # 8. 上传固件
+      # 上传固件
       - name: 上传编译产物
         uses: actions/upload-artifact@v4
         with:
@@ -120,7 +121,7 @@ jobs:
           fetch-depth: 1
 
       - name: 拷贝配置与脚本
-        run: cp -f .config diy ImmortalWrt/
+        run: cp -f .config diy.sh ImmortalWrt/
 
       - name: 执行 diy.sh
         working-directory: ImmortalWrt
