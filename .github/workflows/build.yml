@@ -48,6 +48,7 @@ jobs:
       - name: Update & Install Feeds
         working-directory: ImmortalWrt
         run: |
+          rm -rf tmp build_dir staging_dir
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
