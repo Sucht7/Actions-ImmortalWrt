@@ -1,138 +1,263 @@
-name: 🚀 编译 (Build)
+name: 🚀 编译 ImmortalWrt 24.10 (Build)
 
 on:
   workflow_dispatch:
     inputs:
       owner:
-        description: 'ImmortalWrt 仓库的拥有者 (Owner of ImmortalWrt repo)'
+        description: 'ImmortalWrt 仓库拥有者 (Owner)'
         type: string
         required: true
         default: 'immortalwrt'
       repo:
-        description: 'ImmortalWrt 仓库的名字 (Name of ImmortalWrt repo)'
+        description: 'ImmortalWrt 仓库名称 (Repository)'
         type: string
         required: true
         default: 'immortalwrt'
       branch:
-        description: 'ImmortalWrt 仓库的分支 (Branch of ImmortalWrt repo)'
+        description: 'ImmortalWrt 源码分支 (Branch)'
         type: string
         required: true
         default: 'openwrt-24.10'
       multithreading:
-        description: '开启多线程编译 (Enable multithreading build)'
+        description: '开启多线程编译 (Enable multithreading)'
         type: boolean
+        required: true
         default: true
       ssh:
-        description: '使用 ssh 连接到编译环境 (Connect to the build environment using ssh)'
+        description: '使用 SSH 进入编译环境 (Open SSH session)'
         type: boolean
+        required: true
         default: false
+
+permissions:
+  contents: read
+
+env:
+  TZ: Asia/Shanghai
+  DEBIAN_FRONTEND: noninteractive
 
 jobs:
   build:
-    if: ${{inputs.ssh == false}}
-    runs-on: ubuntu-latest
+    if: ${{ inputs.ssh == false }}
     name: 🚀 编译 (Build)
-    steps:
-      - name: 下载编译所需的依赖 (Install the software packages required for compilation)
-        run: |
-          sudo apt update
-          sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
 
-      - name: 克隆当前仓库 (Clone current repo)
+    steps:
+      - name: 检查磁盘空间 (Check disk space)
+        run: df -h
+
+      - name: 安装编译依赖 (Install build dependencies)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ack antlr3 asciidoc autoconf automake autopoint binutils bison \
+            build-essential bzip2 ccache clang cmake cpio curl \
+            device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib \
+            g++-multilib git gnutls-dev gperf haveged help2man intltool \
+            lib32gcc-s1 libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev \
+            libltdl-dev libmpc-dev libmpfr-dev libncurses-dev libpython3-dev \
+            libreadline-dev libssl-dev libtool libyaml-dev libz-dev lld llvm \
+            lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch \
+            pkgconf python3 python3-pip python3-ply python3-docutils \
+            python3-pyelftools qemu-utils re2c rsync scons squashfs-tools \
+            subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto \
+            xxd zlib1g-dev zstd
+          sudo apt-get clean
+          df -h
+
+      - name: 克隆当前配置仓库 (Checkout configuration repository)
         uses: actions/checkout@v4
 
-      - name: 克隆 ImmortalWrt 仓库 (Clone ImmortalWrt repo)
+      - name: 检查必需配置文件 (Validate required files)
+        run: |
+          test -f .config || { echo '错误：仓库根目录缺少 .config'; exit 1; }
+          test -f feeds.conf.default || { echo '错误：仓库根目录缺少 feeds.conf.default'; exit 1; }
+          test -f diy.sh || { echo '错误：仓库根目录缺少 diy.sh'; exit 1; }
+
+      - name: 克隆 ImmortalWrt 24.10 源码 (Checkout ImmortalWrt source)
         uses: actions/checkout@v4
         with:
-          repository: '${{inputs.owner}}/${{inputs.repo}}'
-          ref: ${{inputs.branch}}
+          repository: '${{ inputs.owner }}/${{ inputs.repo }}'
+          ref: '${{ inputs.branch }}'
           path: ImmortalWrt
+          fetch-depth: 1
 
-      - name: 复制当前仓库的配置文件到 ImmortalWrt 仓库  (Copy current repo config to ImmortalWrt repo)
-        run: cp -f .config feeds.conf.default diy.sh ImmortalWrt/
+      - name: 导入配置文件 (Import configuration files)
+        run: |
+          cp -f .config feeds.conf.default diy.sh ImmortalWrt/
+          chmod +x ImmortalWrt/diy.sh
 
-      - name: 运行 diy.sh (Run diy.sh)
+      - name: 执行自定义脚本 (Run diy.sh)
+        working-directory: ImmortalWrt
+        run: ./diy.sh
+
+      - name: 更新并安装 Feeds (Update and install feeds)
         working-directory: ImmortalWrt
         run: |
-          chmod +x diy.sh
-          ./diy.sh
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
 
-      - name: 更新并下载 feeds (Update and download feeds)
+      - name: 展开并校验配置 (Expand and validate config)
         working-directory: ImmortalWrt
-        run: ./scripts/feeds update -a && ./scripts/feeds install -a
+        run: |
+          make defconfig
+          echo '目标平台配置：'
+          grep -E '^CONFIG_TARGET_(x86|x86_64|x86_64_DEVICE_generic)=' .config || true
 
-      - name: 再次复制当前仓库的配置文件到 ImmortalWrt 仓库 (Copy current repo config to ImmortalWrt repo again)
-        run: cp -f .config feeds.conf.default diy.sh ImmortalWrt/
-
-      - name: 编译前上传配置 (Upload config before build)
+      - name: 上传最终编译配置 (Upload resolved build config)
         uses: actions/upload-artifact@v4
         with:
           name: config-before-build
           path: |
-            ImmortalWrt/feeds.conf.default
             ImmortalWrt/.config
+            ImmortalWrt/feeds.conf.default
+            ImmortalWrt/diy.sh
+          retention-days: 7
+          if-no-files-found: error
 
-      - name: 多线程编译 ImmortalWrt (Build ImmortalWrt multithreading)
-        if: ${{inputs.multithreading == true}}
+      - name: 下载源码包 (Download source archives)
         working-directory: ImmortalWrt
-        run: make -j$(nproc) V=s
+        run: |
+          make download -j8 || make download -j1 V=s
+          find dl -size -1024c -print -delete || true
 
-      - name: 单线程编译 ImmortalWrt (Build ImmortalWrt single thread)
-        if: ${{inputs.multithreading == false}}
+      - name: 多线程编译 ImmortalWrt (Multithreaded build)
+        if: ${{ inputs.multithreading == true }}
+        working-directory: ImmortalWrt
+        run: |
+          make -j"$(nproc)" V=s || {
+            echo '多线程编译失败，改用单线程输出详细错误日志。'
+            make -j1 V=s
+          }
+
+      - name: 单线程编译 ImmortalWrt (Single-threaded build)
+        if: ${{ inputs.multithreading == false }}
         working-directory: ImmortalWrt
         run: make -j1 V=s
 
-      - name: 上传编译结果到 Artifact (Upload build result to Artifact)
+      - name: 显示生成的固件 (List generated images)
+        working-directory: ImmortalWrt
+        run: find bin/targets -maxdepth 4 -type f -printf '%p\n' | sort
+
+      - name: 上传编译结果 (Upload firmware artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: ImmortalWrt-build-result
+          name: ImmortalWrt-24.10-x86_64-build-result
           path: ImmortalWrt/bin/targets
+          retention-days: 7
+          if-no-files-found: error
 
   build-ssh:
-    if: ${{inputs.ssh == true}}
-    name: 🚀 编译 (Build) - SSH
-    runs-on: ubuntu-latest
-    steps:
-      - name: 下载编译所需的依赖 (Install the software packages required for compilation)
-        run: |
-          sudo apt update
-          sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+    if: ${{ inputs.ssh == true }}
+    name: 🚀 编译并开启 SSH (Build with SSH)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
 
-      - name: 克隆当前仓库 (Clone current repo)
+    steps:
+      - name: 检查磁盘空间 (Check disk space)
+        run: df -h
+
+      - name: 安装编译依赖 (Install build dependencies)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ack antlr3 asciidoc autoconf automake autopoint binutils bison \
+            build-essential bzip2 ccache clang cmake cpio curl \
+            device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib \
+            g++-multilib git gnutls-dev gperf haveged help2man intltool \
+            lib32gcc-s1 libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev \
+            libltdl-dev libmpc-dev libmpfr-dev libncurses-dev libpython3-dev \
+            libreadline-dev libssl-dev libtool libyaml-dev libz-dev lld llvm \
+            lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch \
+            pkgconf python3 python3-pip python3-ply python3-docutils \
+            python3-pyelftools qemu-utils re2c rsync scons squashfs-tools \
+            subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto \
+            xxd zlib1g-dev zstd
+          sudo apt-get clean
+          df -h
+
+      - name: 克隆当前配置仓库 (Checkout configuration repository)
         uses: actions/checkout@v4
 
-      - name: 克隆 ImmortalWrt 仓库 (Clone ImmortalWrt repo)
+      - name: 检查必需配置文件 (Validate required files)
+        run: |
+          test -f .config || { echo '错误：仓库根目录缺少 .config'; exit 1; }
+          test -f feeds.conf.default || { echo '错误：仓库根目录缺少 feeds.conf.default'; exit 1; }
+          test -f diy.sh || { echo '错误：仓库根目录缺少 diy.sh'; exit 1; }
+
+      - name: 克隆 ImmortalWrt 24.10 源码 (Checkout ImmortalWrt source)
         uses: actions/checkout@v4
         with:
-          repository: '${{inputs.owner}}/${{inputs.repo}}'
-          ref: ${{inputs.branch}}
+          repository: '${{ inputs.owner }}/${{ inputs.repo }}'
+          ref: '${{ inputs.branch }}'
           path: ImmortalWrt
+          fetch-depth: 1
 
-      - name: 开启 SSH 服务 (Start SSH service)
+      - name: 导入配置文件 (Import configuration files)
+        run: |
+          cp -f .config feeds.conf.default diy.sh ImmortalWrt/
+          chmod +x ImmortalWrt/diy.sh
+
+      - name: 执行自定义脚本 (Run diy.sh)
+        working-directory: ImmortalWrt
+        run: ./diy.sh
+
+      - name: 更新并安装 Feeds (Update and install feeds)
+        working-directory: ImmortalWrt
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          make defconfig
+
+      - name: 开启 SSH 服务 (Start SSH session)
         uses: lhotari/action-upterm@v1
         with:
-          wait-timeout-minutes: 20
+          wait-timeout-minutes: 60
 
-      - name: 编译前上传配置 (Upload config before build)
+      - name: SSH 结束后重新校验配置 (Validate config after SSH)
+        working-directory: ImmortalWrt
+        run: make defconfig
+
+      - name: 上传最终编译配置 (Upload resolved build config)
         uses: actions/upload-artifact@v4
         with:
-          name: config-before-build
+          name: config-before-build-ssh
           path: |
-            ImmortalWrt/feeds.conf.default
             ImmortalWrt/.config
+            ImmortalWrt/feeds.conf.default
+            ImmortalWrt/diy.sh
+          retention-days: 7
+          if-no-files-found: error
 
-      - name: 多线程编译 ImmortalWrt (Build ImmortalWrt multithreading)
-        if: ${{inputs.multithreading == true}}
+      - name: 下载源码包 (Download source archives)
         working-directory: ImmortalWrt
-        run: make -j$(nproc) V=s
+        run: |
+          make download -j8 || make download -j1 V=s
+          find dl -size -1024c -print -delete || true
 
-      - name: 单线程编译 ImmortalWrt (Build ImmortalWrt single thread)
-        if: ${{inputs.multithreading == false}}
+      - name: 多线程编译 ImmortalWrt (Multithreaded build)
+        if: ${{ inputs.multithreading == true }}
+        working-directory: ImmortalWrt
+        run: |
+          make -j"$(nproc)" V=s || {
+            echo '多线程编译失败，改用单线程输出详细错误日志。'
+            make -j1 V=s
+          }
+
+      - name: 单线程编译 ImmortalWrt (Single-threaded build)
+        if: ${{ inputs.multithreading == false }}
         working-directory: ImmortalWrt
         run: make -j1 V=s
 
-      - name: 上传编译结果到 Artifact (Upload build result to Artifact)
+      - name: 显示生成的固件 (List generated images)
+        working-directory: ImmortalWrt
+        run: find bin/targets -maxdepth 4 -type f -printf '%p\n' | sort
+
+      - name: 上传编译结果 (Upload firmware artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: ImmortalWrt-build-result
+          name: ImmortalWrt-24.10-x86_64-build-result
           path: ImmortalWrt/bin/targets
+          retention-days: 7
+          if-no-files-found: error
