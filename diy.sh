@@ -9,4 +9,6 @@ echo "set network.lan.gateway='10.0.0.1'" >> package/base-files/files/bin/config
 # 关闭LAN DHCP（旁路由必备）
 sed -i 's/set dhcp.lan.ignore=0/set dhcp.lan.ignore=1/' package/base-files/files/bin/config_generate
 
-# ========= 已删除 mac80211.sh 相关失效命令 =========
+# 预设无线国家码为 澳大利亚 (AU) 永久生效
+mkdir -p etc/config
+echo "wireless country AU" >> etc/config/wireless
