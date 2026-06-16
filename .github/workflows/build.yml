@@ -327,27 +327,9 @@ jobs:
             exit 1
           fi
 
-      - name: Precompile requested application set
-        working-directory: ImmortalWrt
-        shell: bash
-        run: |
-          set -o pipefail
-
-          PARALLEL_LOG="${GITHUB_WORKSPACE}/package-compile-parallel.log"
-          SINGLE_LOG="${GITHUB_WORKSPACE}/package-compile-single.log"
-
-          echo "Starting parallel package compilation..."
-          set +e
-          make package/compile -j"$(nproc)" V=s 2>&1 | tee "$PARALLEL_LOG"
-          parallel_status=${PIPESTATUS[0]}
-          set -e
-
-          if [ "$parallel_status" -ne 0 ]; then
-            echo "::warning::Parallel package compilation failed."
-            echo "::warning::Re-running with one job and V=sc to reveal the exact failing package."
-            make package/compile -j1 V=sc 2>&1 | tee "$SINGLE_LOG"
-          fi
-
+      # Use the top-level make target from a clean tree.
+      # It builds host tools (including staging_dir/host/bin/ninja),
+      # toolchain, packages and images in the required dependency order.
       - name: Build firmware
         working-directory: ImmortalWrt
         shell: bash
@@ -378,10 +360,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: ImmortalWrt-build-diagnostic-logs
+          name: ImmortalWrt-firmware-build-logs
           path: |
-            package-compile-parallel.log
-            package-compile-single.log
             firmware-build-parallel.log
             firmware-build-single.log
           retention-days: 7
