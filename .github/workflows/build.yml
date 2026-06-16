@@ -1,33 +1,33 @@
-name: 🚀 编译 ImmortalWrt 24.10 (Build)
+name: Build ImmortalWrt 24.10 x86_64 Final
 
 on:
   workflow_dispatch:
     inputs:
       owner:
-        description: 'ImmortalWrt 仓库拥有者 (Owner)'
-        type: string
+        description: ImmortalWrt repository owner
         required: true
-        default: 'immortalwrt'
+        type: string
+        default: immortalwrt
       repo:
-        description: 'ImmortalWrt 仓库名称 (Repository)'
-        type: string
+        description: ImmortalWrt repository name
         required: true
-        default: 'immortalwrt'
+        type: string
+        default: immortalwrt
       branch:
-        description: 'ImmortalWrt 源码分支 (Branch)'
+        description: ImmortalWrt source branch
+        required: true
         type: string
+        default: openwrt-24.10
+      wifi_country:
+        description: Wi-Fi regulatory country code; use the real deployment country
         required: true
-        default: 'openwrt-24.10'
+        type: string
+        default: US
       multithreading:
-        description: '开启多线程编译 (Enable multithreading)'
-        type: boolean
+        description: Enable parallel compilation
         required: true
+        type: boolean
         default: true
-      ssh:
-        description: '使用 SSH 进入编译环境 (Open SSH session)'
-        type: boolean
-        required: true
-        default: false
 
 permissions:
   contents: read
@@ -35,19 +35,22 @@ permissions:
 env:
   TZ: Asia/Shanghai
   DEBIAN_FRONTEND: noninteractive
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
 
 jobs:
   build:
-    if: ${{ inputs.ssh == false }}
-    name: 🚀 编译 (Build)
+    name: Build ImmortalWrt 24.10
     runs-on: ubuntu-22.04
-    timeout-minutes: 360
+    timeout-minutes: 420
 
     steps:
-      - name: 检查磁盘空间 (Check disk space)
-        run: df -h
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet \
+            /opt/hostedtoolcache/CodeQL || true
+          df -h
 
-      - name: 安装编译依赖 (Install build dependencies)
+      - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -55,209 +58,324 @@ jobs:
             build-essential bzip2 ccache clang cmake cpio curl \
             device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib \
             g++-multilib git gnutls-dev gperf haveged help2man intltool \
-            lib32gcc-s1 libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev \
-            libltdl-dev libmpc-dev libmpfr-dev libncurses-dev libpython3-dev \
-            libreadline-dev libssl-dev libtool libyaml-dev libz-dev lld llvm \
-            lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch \
-            pkgconf python3 python3-pip python3-ply python3-docutils \
-            python3-pyelftools qemu-utils re2c rsync scons squashfs-tools \
-            subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto \
-            xxd zlib1g-dev zstd
+            lib32gcc-s1 libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev \
+            libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses-dev \
+            libpython3-dev libreadline-dev libssl-dev libtool libyaml-dev \
+            libz-dev lld llvm lrzsz mkisofs msmtp nano ninja-build \
+            p7zip p7zip-full patch pkgconf python3 python3-docutils \
+            python3-pip python3-ply python3-pyelftools python3-setuptools \
+            qemu-utils re2c rsync scons squashfs-tools subversion swig \
+            texinfo uglifyjs unzip vim wget xmlto xxd zlib1g-dev zstd
           sudo apt-get clean
-          df -h
 
-      - name: 克隆当前配置仓库 (Checkout configuration repository)
-        uses: actions/checkout@v4
+      - name: Checkout configuration repository
+        uses: actions/checkout@v5
 
-      - name: 检查必需配置文件 (Validate required files)
+      - name: Validate configuration seed
         run: |
-          test -f .config || { echo '错误：仓库根目录缺少 .config'; exit 1; }
-          test -f feeds.conf.default || { echo '错误：仓库根目录缺少 feeds.conf.default'; exit 1; }
-          test -f diy.sh || { echo '错误：仓库根目录缺少 diy.sh'; exit 1; }
+          set -eu
+          test -f .config || {
+            echo "::error::Repository root does not contain .config"
+            exit 1
+          }
 
-      - name: 克隆 ImmortalWrt 24.10 源码 (Checkout ImmortalWrt source)
-        uses: actions/checkout@v4
+      - name: Checkout ImmortalWrt source
+        uses: actions/checkout@v5
         with:
-          repository: '${{ inputs.owner }}/${{ inputs.repo }}'
-          ref: '${{ inputs.branch }}'
+          repository: ${{ inputs.owner }}/${{ inputs.repo }}
+          ref: ${{ inputs.branch }}
           path: ImmortalWrt
           fetch-depth: 1
 
-      - name: 导入配置文件 (Import configuration files)
-        run: |
-          cp -f .config feeds.conf.default diy.sh ImmortalWrt/
-          chmod +x ImmortalWrt/diy.sh
-
-      - name: 执行自定义脚本 (Run diy.sh)
-        working-directory: ImmortalWrt
-        run: ./diy.sh
-
-      - name: 更新并安装 Feeds (Update and install feeds)
+      - name: Configure reproducible feeds
         working-directory: ImmortalWrt
         run: |
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+          set -eux
+          cat > feeds.conf.default <<'EOF'
+          src-git packages https://github.com/immortalwrt/packages.git;openwrt-24.10
+          src-git luci https://github.com/immortalwrt/luci.git;openwrt-24.10
+          src-git routing https://github.com/openwrt/routing.git;openwrt-24.10
+          src-git istore https://github.com/linkease/istore.git;main
+          src-git naspackages https://github.com/linkease/nas-packages.git;master
+          src-git nasluci https://github.com/linkease/nas-packages-luci.git;main
+          EOF
 
-      - name: 展开并校验配置 (Expand and validate config)
+      - name: Update and install feeds
         working-directory: ImmortalWrt
         run: |
+          set -eux
+          ./scripts/feeds update packages luci routing istore naspackages nasluci
+
+          ./scripts/feeds install -a -p packages
+          ./scripts/feeds install -a -p luci
+          ./scripts/feeds install -a -p routing
+
+          ./scripts/feeds install -d y -p istore luci-app-store
+          ./scripts/feeds install -d y -p naspackages ddnsto
+          ./scripts/feeds install -d y -p nasluci luci-app-ddnsto
+
+      - name: Add pinned third-party packages
+        working-directory: ImmortalWrt
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          checkout_package() {
+            local url="$1"
+            local ref="$2"
+            local subdir="$3"
+            local dest="$4"
+            local tmp
+
+            tmp="$(mktemp -d)"
+            git -C "$tmp" init -q
+            git -C "$tmp" remote add origin "$url"
+            git -C "$tmp" fetch -q --depth 1 origin "$ref"
+            git -C "$tmp" checkout -q --detach FETCH_HEAD
+
+            test -f "$tmp/$subdir/Makefile" || {
+              echo "::error::Makefile not found: $url ref=$ref subdir=$subdir"
+              find "$tmp" -maxdepth 4 -name Makefile -print
+              exit 1
+            }
+
+            rm -rf "package/$dest"
+            mkdir -p "package/$dest"
+            rsync -a --exclude='.git' "$tmp/$subdir/" "package/$dest/"
+            echo "$dest <- $(git -C "$tmp" rev-parse HEAD)"
+            rm -rf "$tmp"
+          }
+
+          checkout_package \
+            https://github.com/jerrykuku/luci-theme-argon.git \
+            3c8dc64bca054be0c184dc1dc9847b249710a466 \
+            . luci-theme-argon
+
+          checkout_package \
+            https://github.com/vernesong/OpenClash.git \
+            a86fb847719815ff3ab1e94261d5b2bbeabdaef1 \
+            luci-app-openclash luci-app-openclash
+
+          checkout_package \
+            https://github.com/sirpdboy/luci-app-adguardhome.git \
+            73ecb5d6a2bddc43e9273bccab2719728a238c1e \
+            luci-app-adguardhome luci-app-adguardhome
+
+          checkout_package \
+            https://github.com/0x2196f3/luci-app-subconverter.git \
+            d3c77da156831fceaba64b2aff28429c4138e1e8 \
+            luci-app-subconverter luci-app-subconverter
+
+          checkout_package \
+            https://github.com/Tokisaki-Galaxy/luci-app-tailscale-community.git \
+            6b24874139d512968aa3c455130e5b375ba8d2b2 \
+            luci-app-tailscale-community luci-app-tailscale-community
+
+          checkout_package \
+            https://github.com/kongfl888/luci-app-timedreboot.git \
+            master \
+            . luci-app-timedreboot
+
+      - name: Add first-boot network, theme and BCM43602 compatibility defaults
+        working-directory: ImmortalWrt
+        env:
+          WIFI_COUNTRY: ${{ inputs.wifi_country }}
+        run: |
+          set -eux
+
+          case "$WIFI_COUNTRY" in
+            [A-Z][A-Z]) ;;
+            *)
+              echo "::error::wifi_country must be a two-letter uppercase country code"
+              exit 1
+              ;;
+          esac
+
+          mkdir -p files/etc/uci-defaults files/etc/modules.d
+
+          cat > files/etc/modules.d/30-brcmfmac-compat <<'EOF'
+          brcmfmac feature_disable=0x82000
+          EOF
+
+          cat > files/etc/uci-defaults/99-custom-defaults <<EOF
+          #!/bin/sh
+
+          uci set network.lan.proto='static'
+          uci set network.lan.ipaddr='10.0.0.2'
+          uci set network.lan.netmask='255.255.255.0'
+          uci set network.lan.gateway='10.0.0.1'
+          uci set network.lan.defaultroute='1'
+          uci set network.lan.peerdns='0'
+          uci -q delete network.lan.dns
+          uci add_list network.lan.dns='10.0.0.1'
+          uci add_list network.lan.dns='1.1.1.1'
+          uci commit network
+
+          uci -q set dhcp.lan.ignore='1'
+          uci commit dhcp
+
+          uci -q set luci.themes.Argon='/luci-static/argon'
+          uci -q set luci.main.mediaurlbase='/luci-static/argon'
+          uci -q set luci.main.lang='zh_cn'
+          uci commit luci
+
+          if uci -q get wireless.radio0 >/dev/null 2>&1; then
+            uci set wireless.radio0.country='$WIFI_COUNTRY'
+            uci commit wireless
+          fi
+
+          /etc/init.d/AdGuardHome disable >/dev/null 2>&1 || true
+          /etc/init.d/AdGuardHome stop >/dev/null 2>&1 || true
+          /etc/init.d/adguardhome disable >/dev/null 2>&1 || true
+          /etc/init.d/adguardhome stop >/dev/null 2>&1 || true
+          /etc/init.d/smartdns disable >/dev/null 2>&1 || true
+          /etc/init.d/smartdns stop >/dev/null 2>&1 || true
+          /etc/init.d/openclash disable >/dev/null 2>&1 || true
+          /etc/init.d/openclash stop >/dev/null 2>&1 || true
+
+          exit 0
+          EOF
+
+          chmod 0755 files/etc/uci-defaults/99-custom-defaults
+
+      - name: Import and expand configuration
+        working-directory: ImmortalWrt
+        run: |
+          set -eux
+          cp -f ../.config .config
           make defconfig
-          echo '目标平台配置：'
-          grep -E '^CONFIG_TARGET_(x86|x86_64|x86_64_DEVICE_generic)=' .config || true
 
-      - name: 上传最终编译配置 (Upload resolved build config)
-        uses: actions/upload-artifact@v4
+      - name: Fail fast if any requested package is missing
+        working-directory: ImmortalWrt
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required_packages=(
+            luci-theme-argon
+            luci-app-store
+            adguardhome
+            luci-app-adguardhome
+            smartdns
+            luci-app-smartdns
+            luci-app-openclash
+            ttyd
+            luci-app-ttyd
+            netdata
+            luci-app-netdata
+            luci-app-timedreboot
+            luci-app-subconverter
+            tailscale
+            luci-app-tailscale-community
+            ddnsto
+            luci-app-ddnsto
+            docker
+            dockerd
+            luci-app-dockerman
+            luci-app-watchcat
+            luci-app-nlbwmon
+            luci-app-ddns-go
+            luci-app-timewol
+            luci-app-cpufreq
+            kmod-brcmfmac
+            brcmfmac-firmware-43602a1-pcie
+            wpad-openssl
+          )
+
+          failed=0
+          for pkg in "${required_packages[@]}"; do
+            symbol="CONFIG_PACKAGE_${pkg}=y"
+            if grep -Fxq "$symbol" .config; then
+              printf 'OK   %s\n' "$pkg"
+            else
+              printf 'FAIL %s was removed by make defconfig\n' "$pkg"
+              find package -path "*/${pkg}/Makefile" -print || true
+              failed=1
+            fi
+          done
+
+          test "$failed" -eq 0 || {
+            echo "::error::Required packages are incomplete. Stopping before the long compilation."
+            exit 1
+          }
+
+          grep -E '^CONFIG_TARGET_(x86|x86_64|x86_64_DEVICE_generic)=' .config
+          grep -E '^CONFIG_TARGET_(KERNEL|ROOTFS)_PARTSIZE=' .config
+
+      - name: Cache downloads and compiler cache
+        uses: actions/cache@v5
         with:
-          name: config-before-build
+          path: |
+            ImmortalWrt/dl
+            .ccache
+          key: immortalwrt-24.10-x86_64-${{ hashFiles('.config') }}-${{ github.run_id }}
+          restore-keys: |
+            immortalwrt-24.10-x86_64-${{ hashFiles('.config') }}-
+            immortalwrt-24.10-x86_64-
+
+      - name: Download all source archives
+        working-directory: ImmortalWrt
+        run: |
+          set -eux
+          make download -j8
+          bad="$(find dl -type f -size -1024c -print)"
+          if [ -n "$bad" ]; then
+            echo "$bad"
+            find dl -type f -size -1024c -delete
+            echo "::error::One or more downloaded files were invalid or incomplete."
+            exit 1
+          fi
+
+      - name: Precompile requested application set
+        working-directory: ImmortalWrt
+        run: |
+          set -o pipefail
+          make package/compile -j"$(nproc)" V=s
+
+      - name: Build firmware
+        working-directory: ImmortalWrt
+        env:
+          BUILD_PARALLEL: ${{ inputs.multithreading }}
+        run: |
+          set -o pipefail
+          if [ "$BUILD_PARALLEL" = "true" ]; then
+            make -j"$(nproc)" V=s || {
+              echo "::warning::Parallel build failed; resuming with one job for the exact error."
+              make -j1 V=s
+            }
+          else
+            make -j1 V=s
+          fi
+
+      - name: Validate generated x86_64 images
+        working-directory: ImmortalWrt
+        run: |
+          set -eux
+          find bin/targets/x86/64 -maxdepth 1 -type f -printf '%f\n' | sort
+
+          find bin/targets/x86/64 -maxdepth 1 -type f \
+            -name '*ext4-combined*.img.gz' | grep -q . || {
+              echo "::error::No ext4 combined image was generated."
+              exit 1
+            }
+
+      - name: Upload resolved configuration
+        uses: actions/upload-artifact@v6
+        with:
+          name: ImmortalWrt-24.10-resolved-config
           path: |
             ImmortalWrt/.config
             ImmortalWrt/feeds.conf.default
-            ImmortalWrt/diy.sh
+            ImmortalWrt/files/etc/uci-defaults/99-custom-defaults
+            ImmortalWrt/files/etc/modules.d/30-brcmfmac-compat
           retention-days: 7
           if-no-files-found: error
 
-      - name: 下载源码包 (Download source archives)
-        working-directory: ImmortalWrt
-        run: |
-          make download -j8 || make download -j1 V=s
-          find dl -size -1024c -print -delete || true
-
-      - name: 多线程编译 ImmortalWrt (Multithreaded build)
-        if: ${{ inputs.multithreading == true }}
-        working-directory: ImmortalWrt
-        run: |
-          make -j"$(nproc)" V=s || {
-            echo '多线程编译失败，改用单线程输出详细错误日志。'
-            make -j1 V=s
-          }
-
-      - name: 单线程编译 ImmortalWrt (Single-threaded build)
-        if: ${{ inputs.multithreading == false }}
-        working-directory: ImmortalWrt
-        run: make -j1 V=s
-
-      - name: 显示生成的固件 (List generated images)
-        working-directory: ImmortalWrt
-        run: find bin/targets -maxdepth 4 -type f -printf '%p\n' | sort
-
-      - name: 上传编译结果 (Upload firmware artifact)
-        uses: actions/upload-artifact@v4
+      - name: Upload firmware
+        uses: actions/upload-artifact@v6
         with:
-          name: ImmortalWrt-24.10-x86_64-build-result
-          path: ImmortalWrt/bin/targets
+          name: ImmortalWrt-24.10-x86_64-final
+          path: ImmortalWrt/bin/targets/x86/64
           retention-days: 7
-          if-no-files-found: error
-
-  build-ssh:
-    if: ${{ inputs.ssh == true }}
-    name: 🚀 编译并开启 SSH (Build with SSH)
-    runs-on: ubuntu-22.04
-    timeout-minutes: 360
-
-    steps:
-      - name: 检查磁盘空间 (Check disk space)
-        run: df -h
-
-      - name: 安装编译依赖 (Install build dependencies)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            ack antlr3 asciidoc autoconf automake autopoint binutils bison \
-            build-essential bzip2 ccache clang cmake cpio curl \
-            device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib \
-            g++-multilib git gnutls-dev gperf haveged help2man intltool \
-            lib32gcc-s1 libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev \
-            libltdl-dev libmpc-dev libmpfr-dev libncurses-dev libpython3-dev \
-            libreadline-dev libssl-dev libtool libyaml-dev libz-dev lld llvm \
-            lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch \
-            pkgconf python3 python3-pip python3-ply python3-docutils \
-            python3-pyelftools qemu-utils re2c rsync scons squashfs-tools \
-            subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto \
-            xxd zlib1g-dev zstd
-          sudo apt-get clean
-          df -h
-
-      - name: 克隆当前配置仓库 (Checkout configuration repository)
-        uses: actions/checkout@v4
-
-      - name: 检查必需配置文件 (Validate required files)
-        run: |
-          test -f .config || { echo '错误：仓库根目录缺少 .config'; exit 1; }
-          test -f feeds.conf.default || { echo '错误：仓库根目录缺少 feeds.conf.default'; exit 1; }
-          test -f diy.sh || { echo '错误：仓库根目录缺少 diy.sh'; exit 1; }
-
-      - name: 克隆 ImmortalWrt 24.10 源码 (Checkout ImmortalWrt source)
-        uses: actions/checkout@v4
-        with:
-          repository: '${{ inputs.owner }}/${{ inputs.repo }}'
-          ref: '${{ inputs.branch }}'
-          path: ImmortalWrt
-          fetch-depth: 1
-
-      - name: 导入配置文件 (Import configuration files)
-        run: |
-          cp -f .config feeds.conf.default diy.sh ImmortalWrt/
-          chmod +x ImmortalWrt/diy.sh
-
-      - name: 执行自定义脚本 (Run diy.sh)
-        working-directory: ImmortalWrt
-        run: ./diy.sh
-
-      - name: 更新并安装 Feeds (Update and install feeds)
-        working-directory: ImmortalWrt
-        run: |
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
-          make defconfig
-
-      - name: 开启 SSH 服务 (Start SSH session)
-        uses: lhotari/action-upterm@v1
-        with:
-          wait-timeout-minutes: 60
-
-      - name: SSH 结束后重新校验配置 (Validate config after SSH)
-        working-directory: ImmortalWrt
-        run: make defconfig
-
-      - name: 上传最终编译配置 (Upload resolved build config)
-        uses: actions/upload-artifact@v4
-        with:
-          name: config-before-build-ssh
-          path: |
-            ImmortalWrt/.config
-            ImmortalWrt/feeds.conf.default
-            ImmortalWrt/diy.sh
-          retention-days: 7
-          if-no-files-found: error
-
-      - name: 下载源码包 (Download source archives)
-        working-directory: ImmortalWrt
-        run: |
-          make download -j8 || make download -j1 V=s
-          find dl -size -1024c -print -delete || true
-
-      - name: 多线程编译 ImmortalWrt (Multithreaded build)
-        if: ${{ inputs.multithreading == true }}
-        working-directory: ImmortalWrt
-        run: |
-          make -j"$(nproc)" V=s || {
-            echo '多线程编译失败，改用单线程输出详细错误日志。'
-            make -j1 V=s
-          }
-
-      - name: 单线程编译 ImmortalWrt (Single-threaded build)
-        if: ${{ inputs.multithreading == false }}
-        working-directory: ImmortalWrt
-        run: make -j1 V=s
-
-      - name: 显示生成的固件 (List generated images)
-        working-directory: ImmortalWrt
-        run: find bin/targets -maxdepth 4 -type f -printf '%p\n' | sort
-
-      - name: 上传编译结果 (Upload firmware artifact)
-        uses: actions/upload-artifact@v4
-        with:
-          name: ImmortalWrt-24.10-x86_64-build-result
-          path: ImmortalWrt/bin/targets
-          retention-days: 7
+          compression-level: 0
           if-no-files-found: error
