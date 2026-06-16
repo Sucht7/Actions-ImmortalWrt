@@ -141,7 +141,7 @@ jobs:
 
             rm -rf "package/$dest"
             mkdir -p "package/$dest"
-            rsync -a --exclude='.git' "$tmp/$subdir/" "package/$dest/"
+            cp -a "$tmp/$subdir/." "package/$dest/"
             echo "$dest <- $(git -C "$tmp" rev-parse HEAD)"
             rm -rf "$tmp"
           }
@@ -251,6 +251,8 @@ jobs:
         run: |
           set -euo pipefail
 
+          # luci-app-cpufreq is intentionally omitted because the
+          # ImmortalWrt 24.10 cpufreq backend only supports ARM/ARM64.
           required_packages=(
             luci-theme-argon
             luci-app-store
@@ -276,7 +278,6 @@ jobs:
             luci-app-nlbwmon
             luci-app-ddns-go
             luci-app-timewol
-            luci-app-cpufreq
             kmod-brcmfmac
             brcmfmac-firmware-43602a1-pcie
             wpad-openssl
